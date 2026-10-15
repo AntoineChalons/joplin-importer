@@ -135,6 +135,12 @@ export class JoplinClient {
 		return this.getAll<JoplinTag>('/tags', 'id,title', onProgress);
 	}
 
+	/** Ids of the notes carrying a tag. */
+	async listNoteIdsForTag(tagId: string): Promise<string[]> {
+		const items = await this.getAll<{ id: string }>(`/tags/${tagId}/notes`, 'id');
+		return items.map((n) => n.id);
+	}
+
 	listResources(onProgress?: LoadProgress): Promise<JoplinResource[]> {
 		return this.getAll<JoplinResource>('/resources', RESOURCE_FIELDS, onProgress);
 	}

@@ -7,9 +7,10 @@ One command, "Import from Joplin", that reads your notebooks, notes, tags and at
 
 ## Current features
 - Settings tab: Joplin API URL (blank means auto-discover on ports 41184 to 41194) and API token.
-- Command "Dry run: count Joplin notes": loads an inventory (notebooks, notes, tags, attachment metadata) with a progress notice, then scans note bodies for internal references. Reports counts, notebook nesting, notes in unknown notebooks, encrypted notes, references (images, note links, attachment links), unresolved references, unparsed `:/id` mentions and unreferenced attachments. Read-only.
+- Command "Dry run: count Joplin notes": loads an inventory (notebooks, notes, tags, attachment metadata) with a progress notice, scans note bodies for internal references and maps tags. Reports counts, notebook nesting, notes in unknown notebooks, encrypted notes, references (images, note links, attachment links), unresolved references, unparsed `:/id` mentions, unreferenced attachments, and tag results. Read-only.
 - Folder path index: builds notebook paths from `parent_id` (flat list) or `children` (tree), with guards for missing parents and cycles.
 - Reference scanner: finds `![alt](:/id)`, `[text](:/id)` (with optional anchor and title) and `<img src=":/id">`. Anything else containing `:/` plus an id is counted as an unparsed mention so it is never silently dropped.
+- Tag mapping: reads which notes carry each Joplin tag and converts tag names to valid Obsidian tags (spaces and unsupported punctuation become hyphens, purely numeric tags get a `tag-` prefix, tags that differ only by case are merged). Tags that cannot be converted are reported.
 
 ## Using it with Joplin
 1. In Joplin, enable the Web Clipper service and copy the authorization token.
