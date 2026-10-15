@@ -1,5 +1,7 @@
 import { Notice, Plugin } from 'obsidian';
-import { JoplinClient } from './joplin/client';
+import { JoplinClient, discoverJoplin } from './joplin/client';
+import { buildFolderIndex } from './joplin/folders';
+import { obsidianHttp } from './joplin/obsidian-http';
 import { DEFAULT_SETTINGS, JoplinImporterSettings, JoplinImporterSettingTab } from './settings';
 
 export default class JoplinImporterPlugin extends Plugin {
@@ -33,23 +35,45 @@ export default class JoplinImporterPlugin extends Plugin {
 			return;
 		}
 
-		const baseUrl = this.settings.baseUrl || (await JoplinClient.discover());
+		const baseUrl = this.settings.baseUrl || (await discoverJoplin(obsidianHttp));
 		if (!baseUrl) {
 			new Notice('Joplin not found. Start Joplin and enable the Web Clipper service.');
 			return;
 		}
 
 		try {
-			const client = new JoplinClient(baseUrl, this.settings.token);
-			const [folders, notes, tags] = await Promise.all([
+			const client = new JoplinClient(baseUrl, this.settings.token, obsidianHttp);
+			const [folders, notes, tags, resources] = await Promise.all([
 				client.listFolders(),
 				client.listNotes(),
 				client.listTags(),
+				client.listResources(),
 			]);
-			new Notice(`Joplin: ${folders.length} notebooks, ${notes.length} notes, ${tags.length} tags.`);
+
+			const index = buildFolderIndex(folders);
+			const maxDepth = Math.max(0, ...Array.from(index.byId.values(), (f) => f.depth));
+			const orphanNotes = notes.filter((n) => !index.byId.has(n.parent_id)).length;
+			const encrypted = notes.filter((n) => Boolean(n.encryption_applied)).length;
+
+			const summary =
+				`Joplin: ${index.byId.size} notebooks (${index.roots.length} top-level, max depth ${maxDepth}), ` +
+				`${notes.length} notes, ${tags.length} tags, ${resources.length} attachments.`;
+			new Notice(summary);
+			console.info(summary);
+
+			const warnings: string[] = [];
+			if (index.problems.length > 0) warnings.push(`${index.problems.length} notebook path problems`);
+			if (orphanNotes > 0) warnings.push(`${orphanNotes} notes in unknown notebooks`);
+			if (encrypted > 0) warnings.push(`${encrypted} encrypted notes`);
+			if (warnings.length > 0) {
+				const text = `Warnings: ${warnings.join(', ')}.`;
+				new Notice(text);
+				console.warn(text, index.problems);
+			}
 		} catch (error) {
 			console.error('Joplin dry run failed', error);
-			new Notice('Joplin request failed. Check the token and URL; see the console for details.');
+			const message = error instanceof Error ? error.message : 'unknown error';
+			new Notice(`Joplin request failed: ${message}`);
 		}
 	}
 }
