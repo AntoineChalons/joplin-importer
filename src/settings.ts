@@ -4,11 +4,13 @@ import type JoplinImporterPlugin from './main';
 export interface JoplinImporterSettings {
 	baseUrl: string;
 	token: string;
+	attachmentFolder: string;
 }
 
 export const DEFAULT_SETTINGS: JoplinImporterSettings = {
 	baseUrl: '',
 	token: '',
+	attachmentFolder: 'Joplin import/attachments',
 };
 
 export class JoplinImporterSettingTab extends PluginSettingTab {
@@ -48,5 +50,18 @@ export class JoplinImporterSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					});
 			});
+
+		new Setting(containerEl)
+			.setName('Attachment folder')
+			.setDesc('Vault folder where downloaded Joplin attachments are saved. Created if missing.')
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_SETTINGS.attachmentFolder)
+					.setValue(this.plugin.settings.attachmentFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.attachmentFolder = value.trim();
+						await this.plugin.saveSettings();
+					}),
+			);
 	}
 }

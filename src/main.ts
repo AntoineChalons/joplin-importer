@@ -1,4 +1,6 @@
-import { Notice, Plugin } from 'obsidian';
+import { Notice, Plugin, normalizePath } from 'obsidian';
+import { downloadAttachments } from './joplin/attachments';
+import type { AttachmentSink } from './joplin/attachments';
 import { JoplinClient, discoverJoplin } from './joplin/client';
 import { loadInventory } from './joplin/inventory';
 import { obsidianHttp } from './joplin/obsidian-http';
@@ -20,6 +22,14 @@ export default class JoplinImporterPlugin extends Plugin {
 				void this.dryRun();
 			},
 		});
+
+		this.addCommand({
+			id: 'download-attachments',
+			name: 'Download referenced Joplin attachments',
+			callback: () => {
+				void this.downloadReferencedAttachments();
+			},
+		});
 	}
 
 	async loadSettings(): Promise<void> {
@@ -31,22 +41,39 @@ export default class JoplinImporterPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	private async dryRun(): Promise<void> {
+	/** Build a client from the settings, or tell the user what is missing and return null. */
+	private async connect(): Promise<JoplinClient | null> {
 		if (!this.settings.token) {
 			new Notice('Set your Joplin API token in the plugin settings first.');
-			return;
+			return null;
 		}
 
 		const baseUrl = this.settings.baseUrl || (await discoverJoplin(obsidianHttp));
 		if (!baseUrl) {
 			new Notice('Joplin not found. Start Joplin and enable the Web Clipper service.');
-			return;
+			return null;
 		}
+		return new JoplinClient(baseUrl, this.settings.token, obsidianHttp);
+	}
+
+	/** Create every missing folder of a vault path, one level at a time. */
+	private async ensureFolder(folder: string): Promise<void> {
+		let current = '';
+		for (const part of folder.split('/')) {
+			if (!part) continue;
+			current = current ? `${current}/${part}` : part;
+			if (!this.app.vault.getAbstractFileByPath(current)) {
+				await this.app.vault.createFolder(current);
+			}
+		}
+	}
+
+	private async dryRun(): Promise<void> {
+		const client = await this.connect();
+		if (!client) return;
 
 		const progress = new Notice('Joplin: connecting...', 0);
 		try {
-			const client = new JoplinClient(baseUrl, this.settings.token, obsidianHttp);
-
 			const inventory = await loadInventory(client, (stage, loaded) => {
 				progress.setMessage(`Joplin: loading ${stage} (${loaded})...`);
 			});
@@ -108,6 +135,61 @@ export default class JoplinImporterPlugin extends Plugin {
 		} catch (error) {
 			progress.hide();
 			console.error('Joplin dry run failed', error);
+			const message = error instanceof Error ? error.message : 'unknown error';
+			new Notice(`Joplin request failed: ${message}`);
+		}
+	}
+
+	/** M6: download the attachments that notes reference into the attachment folder of the vault. */
+	private async downloadReferencedAttachments(): Promise<void> {
+		const client = await this.connect();
+		if (!client) return;
+
+		const progress = new Notice('Joplin: connecting...', 0);
+		try {
+			const inventory = await loadInventory(client, (stage, loaded) => {
+				progress.setMessage(`Joplin: loading ${stage} (${loaded})...`);
+			});
+
+			const collector = new ReferenceCollector(inventory.noteIds, inventory.resourceIds);
+			for await (const page of client.notePagesWithBody()) {
+				for (const note of page) collector.addNote(note.id, note.body ?? '');
+			}
+			const wanted = new Set(collector.report().referencedResourceIds);
+
+			const folder = normalizePath(this.settings.attachmentFolder || DEFAULT_SETTINGS.attachmentFolder);
+			await this.ensureFolder(folder);
+			const sink: AttachmentSink = {
+				exists: (path) => this.app.vault.getAbstractFileByPath(path) !== null,
+				write: async (path, data) => {
+					await this.app.vault.createBinary(path, data);
+				},
+			};
+
+			const report = await downloadAttachments(
+				client,
+				inventory.resources,
+				wanted,
+				sink,
+				folder,
+				(done, total) => {
+					progress.setMessage(`Joplin: downloading attachments (${done}/${total})...`);
+				},
+			);
+			progress.hide();
+
+			const summary =
+				`Attachments: ${report.requested} referenced; ${report.written} downloaded, ` +
+				`${report.skippedExisting} already in the vault, ${report.failed.length} failed, ` +
+				`${report.sizeMismatches.length} size mismatches (${report.bytes} bytes) in ${folder}.`;
+			new Notice(summary, 15000);
+			console.info(summary);
+			console.info('Attachment paths (Joplin id to vault path)', Array.from(report.pathById.entries()));
+			if (report.failed.length > 0) console.warn('Attachment failures', report.failed);
+			if (report.sizeMismatches.length > 0) console.warn('Attachment size mismatches', report.sizeMismatches);
+		} catch (error) {
+			progress.hide();
+			console.error('Joplin attachment download failed', error);
 			const message = error instanceof Error ? error.message : 'unknown error';
 			new Notice(`Joplin request failed: ${message}`);
 		}
