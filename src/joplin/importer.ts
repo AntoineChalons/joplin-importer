@@ -3,16 +3,42 @@ import type { PathPlan } from './paths';
 import { renderNote } from './render';
 import type { RewriteStats } from './rewrite';
 
+/** Creation and modification time to give a new file, in Unix milliseconds. */
+export interface FileTimes {
+	ctime?: number;
+	mtime?: number;
+}
+
+/** The times a file really ended up with. */
+export interface FileStat {
+	ctime: number;
+	mtime: number;
+}
+
 /** Where folders and notes are written. The plugin implements it with the Obsidian vault; tests use memory. */
 export interface NoteSink {
 	exists(path: string): boolean | Promise<boolean>;
 	createFolder(path: string): Promise<void>;
-	/** Create a new file. Must fail when the path already exists: nothing is ever overwritten. */
-	createNote(path: string, content: string): Promise<void>;
+	/**
+	 * Create a new file with the given times (when set) and return the times it ended up with, when
+	 * known. Must fail when the path already exists: nothing is ever overwritten.
+	 */
+	createNote(path: string, content: string, times?: FileTimes): Promise<FileStat | undefined>;
 }
+
+/** Two times closer than this count as equal: file systems may round the times they store. */
+const TIME_TOLERANCE_MS = 2000;
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : 'unknown error';
+}
+
+/** The Joplin creation and update times of a note, only the ones that are set. */
+export function fileTimes(note: JoplinNote): FileTimes {
+	const times: FileTimes = {};
+	if (typeof note.user_created_time === 'number' && note.user_created_time > 0) times.ctime = note.user_created_time;
+	if (typeof note.user_updated_time === 'number' && note.user_updated_time > 0) times.mtime = note.user_updated_time;
+	return times;
 }
 
 export interface FolderReport {
@@ -69,6 +95,13 @@ export interface NoteWriteReport {
 	notesWithLeftover: string[];
 	/** Planned notes that Joplin never returned. */
 	notFound: string[];
+	/** How many file times were asked for, and how many the written files really have. */
+	times: {
+		ctimeRequested: number;
+		ctimeApplied: number;
+		mtimeRequested: number;
+		mtimeApplied: number;
+	};
 }
 
 /**
@@ -90,6 +123,7 @@ export async function writeNotes(
 		stats: emptyStats(),
 		notesWithLeftover: [],
 		notFound: [],
+		times: { ctimeRequested: 0, ctimeApplied: 0, mtimeRequested: 0, mtimeApplied: 0 },
 	};
 	const seen = new Set<string>();
 	let done = 0;
@@ -106,8 +140,17 @@ export async function writeNotes(
 					tags: ctx.tagsByNoteId.get(note.id) ?? [],
 					fileStem: planned.fileName.replace(/\.md$/, ''),
 				});
-				await sink.createNote(planned.path, content);
+				const times = fileTimes(note);
+				const actual = await sink.createNote(planned.path, content, times);
 				report.written++;
+				if (times.ctime !== undefined) {
+					report.times.ctimeRequested++;
+					if (actual && Math.abs(actual.ctime - times.ctime) < TIME_TOLERANCE_MS) report.times.ctimeApplied++;
+				}
+				if (times.mtime !== undefined) {
+					report.times.mtimeRequested++;
+					if (actual && Math.abs(actual.mtime - times.mtime) < TIME_TOLERANCE_MS) report.times.mtimeApplied++;
+				}
 				const total = report.stats;
 				total.noteLinks += stats.noteLinks;
 				total.embeds += stats.embeds;

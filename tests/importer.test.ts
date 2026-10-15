@@ -31,22 +31,27 @@ const plan = {
 const attachmentPaths = new Map([[IMG, `Joplin import/attachments/${IMG}.jpg`]]);
 const tagsByNoteId = new Map([[N1, ['work']]]);
 
-function memorySink(existing: string[] = []) {
+type Times = { ctime?: number; mtime?: number };
+
+function memorySink(existing: string[] = [], actual?: (times: Times) => { ctime: number; mtime: number }) {
 	const present = new Set(existing);
 	const files = new Map<string, string>();
 	const folders: string[] = [];
+	const timesByPath = new Map<string, Times>();
 	const sink = {
 		exists: (path: string) => present.has(path) || files.has(path),
 		createFolder: async (path: string) => {
 			folders.push(path);
 			present.add(path);
 		},
-		createNote: async (path: string, content: string) => {
+		createNote: async (path: string, content: string, times: Times = {}) => {
 			if (present.has(path) || files.has(path)) throw new Error('File already exists.');
 			files.set(path, content);
+			timesByPath.set(path, times);
+			return actual ? actual(times) : undefined;
 		},
 	};
-	return { sink, files, folders };
+	return { sink, files, folders, timesByPath };
 }
 
 async function* pages(...list: Record<string, unknown>[][]) {
@@ -113,6 +118,36 @@ test('writeNotes: reports progress', async () => {
 		[1, 2],
 		[2, 2],
 	]);
+});
+
+test('writeNotes: passes the Joplin times to the sink and counts the ones the file really has', async () => {
+	const { sink, timesByPath } = memorySink([], (times) => ({ ctime: 9_999_999_999_999, mtime: times.mtime ?? 0 }));
+	const timed1 = { ...note1, user_created_time: 1_000_000, user_updated_time: 2_000_000 };
+	const timed2 = { ...note2, user_created_time: 0, user_updated_time: 3_000_000 };
+	const report = await writeNotes(pages([timed1, timed2]), { plan, tagsByNoteId, attachmentPaths }, sink);
+
+	assert.deepEqual(timesByPath.get('Joplin import/Work/Plan.md'), { ctime: 1_000_000, mtime: 2_000_000 });
+	assert.deepEqual(timesByPath.get('Joplin import/Work/Other.md'), { mtime: 3_000_000 });
+	assert.deepEqual(report.times, { ctimeRequested: 1, ctimeApplied: 0, mtimeRequested: 2, mtimeApplied: 2 });
+});
+
+test('writeNotes: times that match within two seconds count as kept, and notes without times ask for none', async () => {
+	const { sink, timesByPath } = memorySink([], (times) => ({
+		ctime: (times.ctime ?? 0) + 1500,
+		mtime: (times.mtime ?? 0) - 1500,
+	}));
+	const timed = { ...note1, user_created_time: 1_000_000, user_updated_time: 2_000_000 };
+	const report = await writeNotes(pages([timed, note2]), { plan, tagsByNoteId, attachmentPaths }, sink);
+
+	assert.deepEqual(timesByPath.get('Joplin import/Work/Other.md'), {});
+	assert.deepEqual(report.times, { ctimeRequested: 1, ctimeApplied: 1, mtimeRequested: 1, mtimeApplied: 1 });
+});
+
+test('writeNotes: a sink that does not report the file times counts nothing as kept', async () => {
+	const { sink } = memorySink();
+	const timed = { ...note1, user_created_time: 1_000_000, user_updated_time: 2_000_000 };
+	const report = await writeNotes(pages([timed]), { plan, tagsByNoteId, attachmentPaths }, sink);
+	assert.deepEqual(report.times, { ctimeRequested: 1, ctimeApplied: 0, mtimeRequested: 1, mtimeApplied: 0 });
 });
 
 test('createFolders: creates missing folders in order and leaves existing ones', async () => {

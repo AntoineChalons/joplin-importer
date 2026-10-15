@@ -1,6 +1,6 @@
 {
   "name": "joplin-importer",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Obsidian plugin that imports notes from Joplin.",
   "main": "main.js",
   "type": "module",

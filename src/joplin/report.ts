@@ -35,6 +35,7 @@ function row(label: string, expected: number, actual: number): { line: string; o
 export function buildReport(input: ReportInput): string {
 	const { inventory, paths, notes, attachments, folders, tags } = input;
 	const s = notes.stats;
+	const t = notes.times;
 	const checks = [
 		row('Notes written plus skipped, against all Joplin notes', inventory.notes, notes.written + input.skipped.length),
 		row('Notes that failed to write', 0, notes.failed.length),
@@ -50,6 +51,7 @@ export function buildReport(input: ReportInput): string {
 		row('References still in the Joplin form `:/id` outside code', 0, s.leftover),
 	];
 	const allOk = checks.every((c) => c.ok);
+	const timesLost = t.ctimeApplied < t.ctimeRequested || t.mtimeApplied < t.mtimeRequested;
 
 	const lines: string[] = [
 		'---',
@@ -72,6 +74,10 @@ export function buildReport(input: ReportInput): string {
 		`- Notes written: ${notes.written}. Skipped: ${input.skipped.length}. Unfiled: ${paths.unfiled}.`,
 		`- Folders created: ${folders.created}. Already there: ${folders.existing}.`,
 		`- Attachments downloaded: ${attachments.written}. Already there: ${attachments.skippedExisting}. Bytes: ${attachments.bytes}.`,
+		`- File times from Joplin: creation time kept for ${t.ctimeApplied} of ${t.ctimeRequested} notes, modification time kept for ${t.mtimeApplied} of ${t.mtimeRequested} notes.`,
+		...(timesLost
+			? ['- Some file times were not kept; the original dates are always in the `created` and `updated` properties.']
+			: []),
 		`- Notes renamed for a name collision: ${paths.collisionRenamedNotes}. Notebooks renamed: ${paths.collisionRenamedFolders}.`,
 		`- Note titles cleaned: ${paths.sanitisedNotes}. Notebook names cleaned: ${paths.sanitisedFolders}. Untitled notes: ${paths.untitledNotes}. Truncated names: ${paths.truncatedNames}.`,
 		`- Tags: ${tags.notesWithTags} notes tagged, ${tags.tagNoteLinks} tag links, ${tags.renamed.length} tags renamed, ${tags.invalid.length} unusable, ${tags.collisions.length} merged.`,

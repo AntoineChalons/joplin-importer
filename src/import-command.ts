@@ -89,8 +89,9 @@ export async function runImport(app: App, client: JoplinClient, settings: Joplin
 			createFolder: async (path) => {
 				await app.vault.createFolder(path);
 			},
-			createNote: async (path, content) => {
-				await app.vault.create(path, content);
+			createNote: async (path, content, times) => {
+				const file = await app.vault.create(path, content, times);
+				return { ctime: file.stat.ctime, mtime: file.stat.mtime };
 			},
 		};
 		const folders = await createFolders(plan.foldersToCreate, noteSink);
@@ -129,10 +130,12 @@ export async function runImport(app: App, client: JoplinClient, settings: Joplin
 		}
 		status.hide();
 
+		const t = notes.times;
 		const summary =
 			`Import finished: ${notes.written} notes written, ${notes.failed.length} failed, ${p.skipped.length} skipped. ` +
 			`Attachments: ${attachments.written + attachments.skippedExisting} of ${wanted.size}. ` +
 			`References left over: ${notes.stats.leftover}. ` +
+			`File times kept: created ${t.ctimeApplied} of ${t.ctimeRequested}, modified ${t.mtimeApplied} of ${t.mtimeRequested}. ` +
 			(reportWritten ? `Report: ${reportPath}.` : 'The report note could not be written, see the console.');
 		new Notice(summary, 20000);
 		console.info(summary);

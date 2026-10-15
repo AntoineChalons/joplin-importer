@@ -13,6 +13,8 @@ const stats = {
 	leftover: 0,
 };
 
+const allTimesKept = { ctimeRequested: 4, ctimeApplied: 4, mtimeRequested: 4, mtimeApplied: 4 };
+
 function input(overrides: Record<string, unknown> = {}) {
 	return {
 		date: '2026-10-15T23:00:00',
@@ -24,7 +26,7 @@ function input(overrides: Record<string, unknown> = {}) {
 		referencedAttachments: 2,
 		attachments: { requested: 2, written: 2, skippedExisting: 0, bytes: 100, failed: [], sizeMismatches: [], pathById: new Map() },
 		folders: { created: 3, existing: 0, failed: [] },
-		notes: { written: 4, failed: [], stats, notesWithLeftover: [], notFound: [] },
+		notes: { written: 4, failed: [], stats, notesWithLeftover: [], notFound: [], times: allTimesKept },
 		skipped: [{ id: 'abc', title: 'My [[note]] | x', reason: 'html' }],
 		...overrides,
 	} as never;
@@ -41,6 +43,28 @@ test('buildReport: a clean import is OK, lists skipped notes and has no problems
 	assert.ok(text.endsWith('\n'));
 });
 
+test('buildReport: reports how many file times were kept, with a note when some were lost', () => {
+	const kept = buildReport(input());
+	assert.ok(kept.includes('- File times from Joplin: creation time kept for 4 of 4 notes, modification time kept for 4 of 4 notes.'));
+	assert.equal(kept.includes('Some file times were not kept'), false);
+
+	const lost = buildReport(
+		input({
+			notes: {
+				written: 4,
+				failed: [],
+				stats,
+				notesWithLeftover: [],
+				notFound: [],
+				times: { ctimeRequested: 4, ctimeApplied: 0, mtimeRequested: 4, mtimeApplied: 4 },
+			},
+		}),
+	);
+	assert.ok(lost.includes('creation time kept for 0 of 4 notes, modification time kept for 4 of 4 notes.'));
+	assert.ok(lost.includes('- Some file times were not kept; the original dates are always in the `created` and `updated` properties.'));
+	assert.ok(lost.includes('Overall: OK'));
+});
+
 test('buildReport: failures, a missing note and left-over references need attention', () => {
 	const text = buildReport(
 		input({
@@ -50,6 +74,7 @@ test('buildReport: failures, a missing note and left-over references need attent
 				stats: { ...stats, leftover: 1 },
 				notesWithLeftover: ['n8'],
 				notFound: ['n7'],
+				times: allTimesKept,
 			},
 		}),
 	);
