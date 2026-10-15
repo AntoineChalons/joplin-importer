@@ -22,25 +22,25 @@ const folders = [
 	{ id: 'f7', title: 'work' },
 ];
 
-test('sanitiseName: replaces characters that break files, notes also lose link characters', () => {
-	assert.equal(sanitiseName('a/b:c', 'folder').name, 'a-b-c');
-	assert.equal(sanitiseName('Plan #1', 'folder').name, 'Plan #1');
-	assert.equal(sanitiseName('Plan #1 [draft] ^x', 'note').name, 'Plan -1 -draft- -x');
-	assert.equal(sanitiseName('  ..hidden.. ', 'note').name, 'hidden');
+test('sanitiseName: replaces characters that break files or Obsidian links', () => {
+	assert.equal(sanitiseName('a/b:c').name, 'a-b-c');
+	assert.equal(sanitiseName('Plan #1').name, 'Plan -1');
+	assert.equal(sanitiseName('Plan #1 [draft] ^x').name, 'Plan -1 -draft- -x');
+	assert.equal(sanitiseName('  ..hidden.. ').name, 'hidden');
 });
 
 test('sanitiseName: empty names, Windows reserved names and Unicode normalisation', () => {
-	assert.deepEqual(sanitiseName('', 'note'), { name: 'Untitled', changed: false, untitled: true, truncated: false });
-	assert.equal(sanitiseName('   ', 'folder').name, 'Untitled');
-	assert.equal(sanitiseName('CON', 'note').name, 'CON_');
-	assert.equal(sanitiseName('nul.txt', 'folder').name, 'nul.txt_');
-	const nfc = sanitiseName('cafe\u0301', 'note');
+	assert.deepEqual(sanitiseName(''), { name: 'Untitled', changed: false, untitled: true, truncated: false });
+	assert.equal(sanitiseName('   ').name, 'Untitled');
+	assert.equal(sanitiseName('CON').name, 'CON_');
+	assert.equal(sanitiseName('nul.txt').name, 'nul.txt_');
+	const nfc = sanitiseName('cafe\u0301');
 	assert.equal(nfc.name, 'caf\u00e9');
 	assert.equal(nfc.changed, true);
 });
 
 test('sanitiseName: limits a name to 200 UTF-8 bytes without cutting a character', () => {
-	const r = sanitiseName('\ud55c'.repeat(100), 'note');
+	const r = sanitiseName('\ud55c'.repeat(100));
 	assert.equal(r.name, '\ud55c'.repeat(66));
 	assert.equal(r.truncated, true);
 	assert.ok(new TextEncoder().encode(r.name).length <= 200);
@@ -129,6 +129,14 @@ test('planNotePaths: sibling notebooks that differ only by case or use a reserve
 	assert.equal(plan.notes.get('n2')?.path, 'Joplin import/work f7/B.md');
 	assert.equal(plan.notes.get('n3')?.path, 'Joplin import/attachments f6/C.md');
 	assert.equal(plan.report.collisionRenamedFolders, 2);
+});
+
+test('planNotePaths: notebook names lose link characters so full-path wikilinks work', () => {
+	const index = buildFolderIndex([{ id: 'fh', title: 'C# notes' }]);
+	const plan = planNotePaths(index, [note('n1', 'fh', 'Plan')]);
+	assert.equal(plan.notes.get('n1')?.path, 'Joplin import/C- notes/Plan.md');
+	assert.equal(plan.notes.get('n1')?.linkTarget, 'Joplin import/C- notes/Plan');
+	assert.equal(plan.report.sanitisedFolders, 1);
 });
 
 test('planNotePaths: a notebook cycle does not loop forever', () => {

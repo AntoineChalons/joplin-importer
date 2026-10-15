@@ -7,13 +7,10 @@ const ATTACHMENTS_FOLDER = 'attachments';
 const MAX_NAME_BYTES = 200;
 const NOTE_EXTENSION = '.md';
 
-// Characters unsafe in file names on common systems, plus control characters.
-const FOLDER_UNSAFE = /[\\/:*?"<>|\u0000-\u001f]/g;
-// Notes also lose the characters that break Obsidian links: # ^ [ ]
-const NOTE_UNSAFE = /[\\/:*?"<>|#^[\]\u0000-\u001f]/g;
+// Characters unsafe in file names on common systems, plus control characters, plus the characters
+// that break Obsidian links: # ^ [ ]. Folder names count too, because links use the full vault path.
+const UNSAFE = /[\\/:*?"<>|#^[\]\u0000-\u001f]/g;
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
-
-export type NameKind = 'folder' | 'note';
 
 export interface CleanName {
 	name: string;
@@ -37,11 +34,10 @@ function truncateBytes(text: string, max: number): string {
 }
 
 /** Make one folder or note name safe for the vault. Never returns an empty name. */
-export function sanitiseName(raw: string, kind: NameKind): CleanName {
-	const unsafe = kind === 'note' ? NOTE_UNSAFE : FOLDER_UNSAFE;
+export function sanitiseName(raw: string): CleanName {
 	let name = raw
 		.normalize('NFC')
-		.replace(unsafe, '-')
+		.replace(UNSAFE, '-')
 		.replace(/\s+/g, ' ')
 		.trim()
 		.replace(/^[.\s]+|[.\s]+$/g, '');
@@ -167,7 +163,7 @@ export function planNotePaths(
 		for (const id of [...ids].sort()) {
 			const info = folderIndex.byId.get(id);
 			if (!info) continue;
-			const clean = sanitiseName(info.title, 'folder');
+			const clean = sanitiseName(info.title);
 			if (clean.changed) report.sanitisedFolders++;
 			if (clean.truncated) report.truncatedNames++;
 			const unique = uniqueName(clean.name, id, used);
@@ -222,7 +218,7 @@ export function planNotePaths(
 			return a.id < b.id ? -1 : 1;
 		});
 		for (const note of ordered) {
-			const clean = sanitiseName(note.title ?? '', 'note');
+			const clean = sanitiseName(note.title ?? '');
 			if (clean.changed) report.sanitisedNotes++;
 			if (clean.untitled) report.untitledNotes++;
 			if (clean.truncated) report.truncatedNames++;
