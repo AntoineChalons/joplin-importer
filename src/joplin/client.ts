@@ -10,6 +10,9 @@ export const NOTE_META_FIELDS =
 export const NOTE_BODY_FIELDS = `${NOTE_META_FIELDS},body`;
 export const RESOURCE_FIELDS = 'id,mime,filename,file_extension,size';
 
+/** Called after each page with the number of items loaded so far. */
+export type LoadProgress = (loaded: number) => void;
+
 interface Page<T> {
 	items?: T[];
 	has_more?: boolean;
@@ -105,21 +108,22 @@ export class JoplinClient {
 		throw new Error(`Too many pages on ${path}`);
 	}
 
-	private async getAll<T>(path: string, fields?: string): Promise<T[]> {
+	private async getAll<T>(path: string, fields?: string, onProgress?: LoadProgress): Promise<T[]> {
 		const all: T[] = [];
 		for await (const items of this.pages<T>(path, fields)) {
 			all.push(...items);
+			onProgress?.(all.length);
 		}
 		return all;
 	}
 
 	/** Folders are requested with default fields so a tree response keeps its children. */
-	listFolders(): Promise<JoplinFolder[]> {
-		return this.getAll<JoplinFolder>('/folders');
+	listFolders(onProgress?: LoadProgress): Promise<JoplinFolder[]> {
+		return this.getAll<JoplinFolder>('/folders', undefined, onProgress);
 	}
 
-	listNotes(): Promise<JoplinNote[]> {
-		return this.getAll<JoplinNote>('/notes', NOTE_META_FIELDS);
+	listNotes(onProgress?: LoadProgress): Promise<JoplinNote[]> {
+		return this.getAll<JoplinNote>('/notes', NOTE_META_FIELDS, onProgress);
 	}
 
 	/** Pages of notes including their body, for streaming conversion. */
@@ -127,12 +131,12 @@ export class JoplinClient {
 		return this.pages<JoplinNote>('/notes', NOTE_BODY_FIELDS);
 	}
 
-	listTags(): Promise<JoplinTag[]> {
-		return this.getAll<JoplinTag>('/tags', 'id,title');
+	listTags(onProgress?: LoadProgress): Promise<JoplinTag[]> {
+		return this.getAll<JoplinTag>('/tags', 'id,title', onProgress);
 	}
 
-	listResources(): Promise<JoplinResource[]> {
-		return this.getAll<JoplinResource>('/resources', RESOURCE_FIELDS);
+	listResources(onProgress?: LoadProgress): Promise<JoplinResource[]> {
+		return this.getAll<JoplinResource>('/resources', RESOURCE_FIELDS, onProgress);
 	}
 
 	getResourceFile(id: string): Promise<ArrayBuffer> {
