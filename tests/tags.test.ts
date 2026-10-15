@@ -27,6 +27,16 @@ test('toObsidianTag: nothing usable gives null', () => {
 	assert.equal(toObsidianTag('  '), null);
 });
 
+test('toObsidianTag: @name person tags go under people/', () => {
+	assert.equal(toObsidianTag('@mike'), 'people/mike');
+	assert.equal(toObsidianTag('@alicia-lemaire'), 'people/alicia-lemaire');
+	assert.equal(toObsidianTag('@Mike Dupont'), 'people/Mike-Dupont');
+	assert.equal(toObsidianTag('@@mike'), 'people/mike');
+	assert.equal(toObsidianTag('@123'), 'people/123');
+	assert.equal(toObsidianTag('@'), null);
+	assert.equal(toObsidianTag('@!!!'), null);
+});
+
 test('buildTagMapping: merges case variants, reports renamed, invalid and unknown refs', () => {
 	const tags = [
 		{ id: 't1', title: 'work' },
@@ -57,6 +67,23 @@ test('buildTagMapping: merges case variants, reports renamed, invalid and unknow
 	assert.deepEqual(m.collisions, [{ obsidian: 'work', originals: ['work', 'Work'] }]);
 	assert.equal(m.unknownNoteRefs, 1);
 	assert.equal(m.tagCount, 5);
+});
+
+test('buildTagMapping: @name and an existing people/name tag merge by case', () => {
+	const tags = [
+		{ id: 't1', title: '@Mike' },
+		{ id: 't2', title: 'people/mike' },
+	];
+	const m = buildTagMapping(
+		tags,
+		new Map([
+			['t1', ['n1']],
+			['t2', ['n1']],
+		]),
+		new Set(['n1']),
+	);
+	assert.deepEqual(m.tagsByNoteId.get('n1'), ['people/Mike']);
+	assert.deepEqual(m.collisions, [{ obsidian: 'people/Mike', originals: ['@Mike', 'people/mike'] }]);
 });
 
 test('buildTagMapping: no tags gives an empty mapping', () => {

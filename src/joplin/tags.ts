@@ -5,21 +5,35 @@ import { mapLimit } from './pool';
 // ASCII characters Obsidian tags cannot contain (everything except 0-9 A-Z a-z _ - /).
 const DISALLOWED_ASCII = /[\u0000-\u002C\u002E\u003A-\u0040\u005B-\u005E\u0060\u007B-\u007F]/g;
 
-/**
- * Convert a Joplin tag title to a valid Obsidian tag name, or null if nothing usable remains.
- * Rules (Obsidian Tags help): letters, numbers, _ - / and Unicode characters; no spaces;
- * at least one non-numeric character; case-insensitive. Non-ASCII characters are kept as they are.
- */
-export function toObsidianTag(title: string): string | null {
+const PERSON_PREFIX = 'people/';
+
+/** Shared cleanup: whitespace and disallowed ASCII to '-', collapse repeats, trim '-' and '/'. */
+function sanitiseTagName(title: string): string | null {
 	let t = title.trim();
 	t = t.replace(/\s+/g, '-');
 	t = t.replace(DISALLOWED_ASCII, '-');
 	t = t.replace(/-{2,}/g, '-');
 	t = t.replace(/\/{2,}/g, '/');
 	t = t.replace(/^[-/]+|[-/]+$/g, '');
-	if (t === '') return null;
+	return t === '' ? null : t;
+}
+
+/**
+ * Convert a Joplin tag title to a valid Obsidian tag name, or null if nothing usable remains.
+ * Rules (Obsidian Tags help): letters, numbers, _ - / and Unicode characters; no spaces;
+ * at least one non-numeric character; case-insensitive. Non-ASCII characters are kept as they are.
+ * Person tags written as "@name" become "people/name" (decision D-008).
+ */
+export function toObsidianTag(title: string): string | null {
+	const trimmed = title.trim();
+	if (trimmed.startsWith('@')) {
+		const name = sanitiseTagName(trimmed.replace(/^@+/, ''));
+		return name === null ? null : `${PERSON_PREFIX}${name}`;
+	}
+	const t = sanitiseTagName(trimmed);
+	if (t === null) return null;
 	// A tag needs a character that is not a digit; be conservative and also exclude - _ /.
-	if (!/[^\d\-_/]/u.test(t)) t = `tag-${t}`;
+	if (!/[^\d\-_/]/u.test(t)) return `tag-${t}`;
 	return t;
 }
 
