@@ -1,4 +1,5 @@
 import { Notice, Plugin, normalizePath } from 'obsidian';
+import { runImport } from './import-command';
 import { downloadAttachments } from './joplin/attachments';
 import type { AttachmentSink } from './joplin/attachments';
 import { JoplinClient, discoverJoplin } from './joplin/client';
@@ -29,6 +30,14 @@ export default class JoplinImporterPlugin extends Plugin {
 			name: 'Download referenced Joplin attachments',
 			callback: () => {
 				void this.downloadReferencedAttachments();
+			},
+		});
+
+		this.addCommand({
+			id: 'import',
+			name: 'Import from Joplin',
+			callback: () => {
+				void this.importFromJoplin();
 			},
 		});
 	}
@@ -67,6 +76,12 @@ export default class JoplinImporterPlugin extends Plugin {
 				await this.app.vault.createFolder(current);
 			}
 		}
+	}
+
+	private async importFromJoplin(): Promise<void> {
+		const client = await this.connect();
+		if (!client) return;
+		await runImport(this.app, client, this.settings);
 	}
 
 	private async dryRun(): Promise<void> {
