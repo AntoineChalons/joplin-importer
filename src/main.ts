@@ -4,6 +4,7 @@ import type { AttachmentSink } from './joplin/attachments';
 import { JoplinClient, discoverJoplin } from './joplin/client';
 import { loadInventory } from './joplin/inventory';
 import { obsidianHttp } from './joplin/obsidian-http';
+import { planNotePaths } from './joplin/paths';
 import { ReferenceCollector } from './joplin/references';
 import { buildTagMapping, loadNotesByTag } from './joplin/tags';
 import { DEFAULT_SETTINGS, JoplinImporterSettings, JoplinImporterSettingTab } from './settings';
@@ -91,6 +92,9 @@ export default class JoplinImporterPlugin extends Plugin {
 				progress.setMessage(`Joplin: mapping tags (${done}/${total})...`);
 			});
 			const tagMapping = buildTagMapping(inventory.tags, notesByTag, inventory.noteIds);
+			const pathPlan = planNotePaths(inventory.folderIndex, inventory.notes, {
+				importFolder: this.settings.importFolder || DEFAULT_SETTINGS.importFolder,
+			});
 			progress.hide();
 
 			const s = inventory.summary;
@@ -106,20 +110,34 @@ export default class JoplinImporterPlugin extends Plugin {
 				`Tags: ${tagMapping.notesWithTags} notes tagged, ${tagMapping.tagNoteLinks} tag links; ` +
 				`${tagMapping.renamed.length} renamed for Obsidian, ${tagMapping.invalid.length} unusable, ` +
 				`${tagMapping.collisions.length} merged by case or punctuation.`;
+			const p = pathPlan.report;
+			const htmlSkipped = p.skipped.filter((n) => n.reason === 'html').length;
+			const encryptedSkipped = p.skipped.filter((n) => n.reason === 'encrypted').length;
+			const pathSummary =
+				`Paths: ${p.planned} of ${p.totalNotes} notes planned in ${pathPlan.foldersToCreate.length} folders; ` +
+				`${p.skipped.length} skipped (${htmlSkipped} HTML, ${encryptedSkipped} encrypted), ${p.unfiled} unfiled; ` +
+				`${p.collisionRenamedNotes} notes and ${p.collisionRenamedFolders} notebooks renamed for collisions; ` +
+				`${p.sanitisedNotes} note titles and ${p.sanitisedFolders} notebook names cleaned, ` +
+				`${p.untitledNotes} untitled, ${p.truncatedNames} truncated.`;
 			new Notice(summary, 15000);
 			new Notice(refSummary, 15000);
 			new Notice(tagSummary, 15000);
+			new Notice(pathSummary, 15000);
 			console.info(summary);
 			console.info(refSummary);
 			console.info(tagSummary);
+			console.info(pathSummary);
 			if (tagMapping.renamed.length > 0) console.info('Renamed tags', tagMapping.renamed);
 			if (tagMapping.invalid.length > 0) console.info('Unusable tags', tagMapping.invalid);
 			if (tagMapping.collisions.length > 0) console.info('Merged tags', tagMapping.collisions);
+			console.info('Planned paths', Array.from(pathPlan.notes.values()).map((n) => n.path));
+			if (p.skipped.length > 0) console.warn('Skipped notes (Joplin ids)', p.skipped);
 
 			const warnings: string[] = [];
 			if (s.folderProblems > 0) warnings.push(`${s.folderProblems} notebook path problems`);
 			if (s.orphanNotes > 0) warnings.push(`${s.orphanNotes} notes in unknown notebooks`);
 			if (s.encryptedNotes > 0) warnings.push(`${s.encryptedNotes} encrypted notes`);
+			if (htmlSkipped > 0) warnings.push(`${htmlSkipped} HTML notes will be skipped`);
 			if (tagMapping.unknownNoteRefs > 0) warnings.push(`${tagMapping.unknownNoteRefs} tag links to unknown notes`);
 			if (warnings.length > 0) {
 				const text = `Warnings: ${warnings.join(', ')}.`;

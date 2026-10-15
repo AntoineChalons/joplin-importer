@@ -4,12 +4,14 @@ import type JoplinImporterPlugin from './main';
 export interface JoplinImporterSettings {
 	baseUrl: string;
 	token: string;
+	importFolder: string;
 	attachmentFolder: string;
 }
 
 export const DEFAULT_SETTINGS: JoplinImporterSettings = {
 	baseUrl: '',
 	token: '',
+	importFolder: 'Joplin import',
 	attachmentFolder: 'Joplin import/attachments',
 };
 
@@ -50,6 +52,19 @@ export class JoplinImporterSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					});
 			});
+
+		new Setting(containerEl)
+			.setName('Import folder')
+			.setDesc('Vault folder that holds everything imported from Joplin (notebooks and notes). Created if missing.')
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_SETTINGS.importFolder)
+					.setValue(this.plugin.settings.importFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.importFolder = value.trim();
+						await this.plugin.saveSettings();
+					}),
+			);
 
 		new Setting(containerEl)
 			.setName('Attachment folder')
